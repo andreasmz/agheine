@@ -3,8 +3,8 @@ import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-import matplotlib.widgets as PltWidget
 import pandas as pd
+import configparser
 
 class IntStringVar:
     def __init__(self, root, IntVar: tk.IntVar):
@@ -19,20 +19,36 @@ class IntStringVar:
     
     def _StringVarUpdate(self, val1, val2, val3):
         if (self.StringVar.get() != str(self.IntVar.get())):
-            self.IntVar.set(self.StringVar.get())
+            if (self.StringVar.get().isdigit()):
+                self.IntVar.set(self.StringVar.get())
 
 
 class GUI():
     def __init__(self):
         self.root = None
         self.data = None
-        self.dataMerged = None
         self.histData = None
+        self.config = None
 
     def GUI(self):
         self.root = tk.Tk()
-        self.root.title("Swift Tools")
+        self.root.title("Histplot")
         self.root.geometry("600x600")
+        self.root.iconbitmap(os.path.join(os.path.dirname(__file__), "histplot_icon.ico"))
+        self.root.protocol("WM_DELETE_WINDOW", self.On_closing)
+
+        self.config = configparser.ConfigParser()
+        self.config.read('histplot_settings.ini')
+        if "SETTINGS" not in self.config.sections():
+            self.config.add_section("SETTINGS")
+        if not self.config.has_option("SETTINGS", "XAxisLabel"):
+            self.config.set("SETTINGS", "XAxisLabel", "X Label")
+        if not self.config.has_option("SETTINGS", "YAxisLabel"):
+            self.config.set("SETTINGS", "YAxisLabel", "Y Label")
+        if not self.config.has_option("SETTINGS", "TitleLabel"):
+            self.config.set("SETTINGS", "TitleLabel", "Weighted Plot")
+        if not self.config.has_option("SETTINGS", "AutoMinMax"):
+            self.config.set("SETTINGS", "AutoMinMax", "1")
 
         self.menubar = tk.Menu(self.root)
         self.root.config(menu=self.menubar)
@@ -40,11 +56,16 @@ class GUI():
         self.menubar.add_cascade(label="File",menu=self.menuFile)
         self.menuFile.add_command(label="Open File(s)", command=self.OpenFiles)
         self.menuFile.add_command(label="Open Folder", command=self.OpenFolder)
+        self.menuOptions = tk.Menu(self.menubar,tearoff=0)
+        self.menubar.add_cascade(label="Options",menu=self.menuOptions)
+        self.checkAutoMinMaxVar = tk.IntVar(value=int(self.config.get("SETTINGS", "AutoMinMax")))
+        self.menuOptions.add_checkbutton(label="Auto set min and max", variable=self.checkAutoMinMaxVar)
 
         self.frameTools = tk.Frame(self.root)
         self.frameTools.pack(side=tk.LEFT, expand=True, fill="y")
         self.framePlot = tk.Frame(self.root, background="blue")
         self.framePlot.pack(side=tk.LEFT, expand=True, fill="both")
+
 
         self.figure = plt.Figure(figsize=(20,20), dpi=100)
         self.ax = self.figure.add_subplot() 
@@ -64,9 +85,11 @@ class GUI():
         tk.Label(self.framePlotOptions, text="Bins").grid(row=3, column=0)
         tk.Label(self.framePlotOptions, text="Min").grid(row=4, column=0)
         tk.Label(self.framePlotOptions, text="Max").grid(row=5, column=0)
-        self.txtTitleVar = tk.StringVar(value="mjd histogram weighted by mjd_n")
-        self.txtXLabelVar = tk.StringVar(value="mjd")
-        self.txtYLabelVar = tk.StringVar(value="weighted count")
+        tk.Label(self.framePlotOptions, text="Data column").grid(row=6, column=0)
+        tk.Label(self.framePlotOptions, text="Weights").grid(row=7, column=0)
+        self.txtTitleVar = tk.StringVar(value=self.config.get("SETTINGS", "TitleLabel"))
+        self.txtXLabelVar = tk.StringVar(value=self.config.get("SETTINGS", "XAxisLabel"))
+        self.txtYLabelVar = tk.StringVar(value=self.config.get("SETTINGS", "YAxisLabel"))
         self.txtTitleVar.trace_add("write", self._EntryUpdate)
         self.txtXLabelVar.trace_add("write", self._EntryUpdate)
         self.txtYLabelVar.trace_add("write", self._EntryUpdate)
@@ -91,6 +114,14 @@ class GUI():
         self.numIntBins.grid(row=3, column=2)
         self.numIntMin.grid(row=4, column=2)
         self.numIntMax.grid(row=5, column=2)
+        self.comboDataColumnVar = tk.StringVar() 
+        self.comboDataColumnVar.trace_add("write", self.ComboColumnChanged)
+        self.comboDataColumn = ttk.Combobox(self.framePlotOptions, textvariable = self.comboDataColumnVar, state="readonly")
+        self.comboDataColumn.grid(row=6, column=1, columnspan=2, sticky="news") 
+        self.comboWeightColumnVar = tk.StringVar() 
+        self.comboWeightColumnVar.trace_add("write", self.ComboColumnChanged)
+        self.comboWeightColumn = ttk.Combobox(self.framePlotOptions, textvariable = self.comboWeightColumnVar, state="readonly")
+        self.comboWeightColumn.grid(row=7, column=1, columnspan=2, sticky="news") 
 
         self.frameFiles = ttk.LabelFrame(self.frameTools, text="Files")
         self.frameFiles.pack(anchor="nw", fill="x")
@@ -103,9 +134,18 @@ class GUI():
         self.btnExportCSV.pack(side=tk.LEFT)
         self.btnExportFigure = tk.Button(self.frameExport, text="Save Figure", command=self.SaveFigure)
         self.btnExportFigure.pack(side=tk.LEFT)
-        
 
         self.root.mainloop()
+
+    def On_closing(self):
+        try:
+            self.ConfigUpdate()
+            with open('histplot_settings.ini', 'w') as configfile:
+                self.config.write(configfile)
+        except Exception as ex:
+            print(str(ex))
+            pass
+        self.root.destroy()
 
     def OpenFiles(self):
         filepaths = filedialog.askopenfilename(parent=self.root, title="Swift Tools: Open csv files", filetypes=(("CSV files", "*.csv"), ("All files", "*.*")), multiple=True)
@@ -120,26 +160,48 @@ class GUI():
                 self.ReadData(files)
 
     def ReadData(self, files):
-        self.data = {}
+        self.data = pd.DataFrame()
         self.listFiles.delete(0,tk.END)
         for file in files:
-            self.data[file] = pd.read_csv(file, sep=",", header=0)
+            try:
+                _pd = pd.read_csv(file, sep=",", header=0)
+            except Exception:
+                continue
+            _pd["file"] = os.path.basename(file)
             self.listFiles.insert(tk.END, os.path.basename(file))
-        self.dataMerged = pd.concat([d for d in self.data.values()])
+            self.data = pd.concat([self.data, _pd], ignore_index=True)
+        self.comboDataColumn['values'] = [f"{x} ({self.data[x].count()})" for x in list(self.data.columns) if x != "file"]
+        _weightsColumns = list([f"{x} ({self.data[x].count()})" for x in list(self.data.columns) if x != "file"])
+        _weightsColumns.insert(0, "None ")
+        self.comboWeightColumn['values'] = _weightsColumns
+        if len(self.comboDataColumn["values"]) > 0:
+            self.comboDataColumn.current(0)
+        self.comboWeightColumn.current(0)
+        self.ComboColumnChanged("", "", "")
         self.Update()
 
     def Update(self):
-        if self.dataMerged is None:
-            self.ax.clear()
-            return
         self.ax.clear()
+        self.histData = None
+
+        if self.data is None:
+            return
+        _dataColumn = " ".join(self.comboDataColumnVar.get().split(" ")[:-1])
+        _weightColumn = " ".join(self.comboWeightColumnVar.get().split(" ")[:-1])
+        if _dataColumn not in self.data.columns or (_weightColumn not in self.data.columns and _weightColumn != "None"):
+            return
         self.ax.set_title(self.txtTitleVar.get())
         self.ax.set_ylabel(self.txtYLabelVar.get())
         self.ax.set_xlabel(self.txtXLabelVar.get())
         range = (self.minVar.IntVar.get(), self.maxVar.IntVar.get())
         if range[0] > range[1]:
             range = (self.maxVar.IntVar.get(), self.minVar.IntVar.get())
-        self.histData = self.ax.hist(self.dataMerged["mjd"], weights=self.dataMerged["mjd_n"], bins=self.binsVar.IntVar.get(), range=range)
+
+        _weights = None
+        if _weightColumn != "None":
+            _weights = self.data[_weightColumn]
+
+        self.histData = self.ax.hist(self.data[_dataColumn], weights=_weights, bins=self.binsVar.IntVar.get(), range=range)
         if self.framePlot.winfo_width() > 100:
             self.figure.tight_layout()
         self.canvas.draw()
@@ -148,10 +210,15 @@ class GUI():
         if self.histData is None:
             self.root.bell()
             return
+        _dataColumn = " ".join(self.comboDataColumnVar.get().split(" ")[:-1])
+        _weightColumn = " ".join(self.comboWeightColumnVar.get().split(" ")[:-1])
+        if _dataColumn not in self.data.columns or (_weightColumn not in self.data.columns and _weightColumn != "None"):
+            self.root.bell()
+            return
         save_file = filedialog.asksaveasfile(parent=self.root, mode="w", title="Save as csv", filetypes=[("Comma-separated values", "*.csv"), ("All files", "*.*")], defaultextension=".csv")
         if save_file is None:
             return
-        save_file.write("mjd_left,mjd_right,'mjd weighted by mjd_n'\n")
+        save_file.write(f"'{_dataColumn}_left','{_dataColumn}_right','{_dataColumn} weighted by {_weightColumn}'\n")
         for i in range(len(self.histData[0])):
             save_file.write("%s,%s,%s\n" % (round(self.histData[1][i],3),round(self.histData[1][i+1],3), self.histData[0][i]))
         save_file.close()
@@ -167,6 +234,17 @@ class GUI():
         save_file.close()
         self.figure.savefig(_fname)
 
+    def ComboColumnChanged(self, val1, val2, val3):
+        self.Update()
+        if self.data is None:
+            return
+        if (self.checkAutoMinMaxVar.get() != 1):
+            return
+        _dataColumn = " ".join(self.comboDataColumnVar.get().split(" ")[:-1])
+        if _dataColumn not in self.data.columns:
+            return
+        self.minVar.IntVar.set(min(self.data[_dataColumn]))
+        self.maxVar.IntVar.set(max(self.data[_dataColumn]))
 
     def _WidgetUpdate(self, val):
         self.Update()
@@ -178,3 +256,9 @@ class GUI():
         if self.framePlot.winfo_width() > 100:
             self.figure.tight_layout()
             self.canvas.draw()
+
+    def ConfigUpdate(self):
+        self.config.set("SETTINGS", "XAxisLabel", self.txtXLabelVar.get())
+        self.config.set("SETTINGS", "YAxisLabel", self.txtYLabelVar.get())
+        self.config.set("SETTINGS", "TitleLabel", self.txtTitleVar.get())
+        self.config.set("SETTINGS", "AutoMinMax", str(self.checkAutoMinMaxVar.get()))
