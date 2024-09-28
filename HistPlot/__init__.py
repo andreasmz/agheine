@@ -5,7 +5,7 @@ if __name__ == "__main__":
     histplot_path = os.path.abspath(histplot_path)
     sys.path.insert(1, histplot_path)
 
-from SwiftTools.gui import GUI
+from HistPlot.gui import GUI
 
 if __name__ == "__main__":
     gui = GUI()

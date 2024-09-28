@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas as pd
 import configparser
+import numpy as np
+import math
 
 class IntStringVar:
     def __init__(self, root, IntVar: tk.IntVar):
@@ -19,7 +21,7 @@ class IntStringVar:
     
     def _StringVarUpdate(self, val1, val2, val3):
         if (self.StringVar.get() != str(self.IntVar.get())):
-            if (self.StringVar.get().isdigit()):
+            if (self.StringVar.get().lstrip("-").isdigit()):
                 self.IntVar.set(self.StringVar.get())
 
 
@@ -102,9 +104,9 @@ class GUI():
         self.scaleIntBins = ttk.Scale(self.framePlotOptions, from_=1, to=100, variable=self.binsVar.IntVar,  command=self._WidgetUpdate)
         self.scaleIntMin = ttk.Scale(self.framePlotOptions, from_=0, to=5000, variable=self.minVar.IntVar,  command=self._WidgetUpdate)
         self.scaleIntMax = ttk.Scale(self.framePlotOptions, from_=0, to=5000, variable=self.maxVar.IntVar,  command=self._WidgetUpdate)
-        self.numIntBins = tk.Spinbox(self.framePlotOptions, width=6, textvariable=self.binsVar.StringVar, from_=1, to=100)
-        self.numIntMin = tk.Spinbox(self.framePlotOptions, width=6, textvariable=self.minVar.StringVar, from_=0, to=5000)
-        self.numIntMax = tk.Spinbox(self.framePlotOptions, width=6, textvariable=self.maxVar.StringVar, from_=0, to=5000)
+        self.numIntBins = tk.Spinbox(self.framePlotOptions, width=6, textvariable=self.binsVar.StringVar, from_=1, to=1000, command=self._SpinboxUpdate)
+        self.numIntMin = tk.Spinbox(self.framePlotOptions, width=6, textvariable=self.minVar.StringVar, from_=-10000, to=10000, command=self._SpinboxUpdate)
+        self.numIntMax = tk.Spinbox(self.framePlotOptions, width=6, textvariable=self.maxVar.StringVar, from_=-10000, to=10000, command=self._SpinboxUpdate)
         self.txtTitle.grid(row=0, column=1, columnspan=2, sticky="news")
         self.txtXLabel.grid(row=1, column=1, columnspan=2, sticky="news")
         self.txtYLabel.grid(row=2, column=1, columnspan=2, sticky="news")
@@ -170,6 +172,7 @@ class GUI():
             _pd["file"] = os.path.basename(file)
             self.listFiles.insert(tk.END, os.path.basename(file))
             self.data = pd.concat([self.data, _pd], ignore_index=True)
+        self.data = self.data.apply(pd.to_numeric, errors='coerce')
         self.comboDataColumn['values'] = [f"{x} ({self.data[x].count()})" for x in list(self.data.columns) if x != "file"]
         _weightsColumns = list([f"{x} ({self.data[x].count()})" for x in list(self.data.columns) if x != "file"])
         _weightsColumns.insert(0, "None ")
@@ -197,11 +200,13 @@ class GUI():
         if range[0] > range[1]:
             range = (self.maxVar.IntVar.get(), self.minVar.IntVar.get())
 
+        # plt.hist is Nan save as it is using np.histogram. Don't use df.dropna() as it will alter the shape messing of with the weights column
+        _data = self.data[_dataColumn]
         _weights = None
         if _weightColumn != "None":
-            _weights = self.data[_weightColumn]
+            _weights = self.data[_weightColumn].fillna(0) # If NaN weight column, set it to weight 0
 
-        self.histData = self.ax.hist(self.data[_dataColumn], weights=_weights, bins=self.binsVar.IntVar.get(), range=range)
+        self.histData = self.ax.hist(_data, weights=_weights, bins=self.binsVar.IntVar.get(), range=range)
         if self.framePlot.winfo_width() > 100:
             self.figure.tight_layout()
         self.canvas.draw()
@@ -235,18 +240,29 @@ class GUI():
         self.figure.savefig(_fname)
 
     def ComboColumnChanged(self, val1, val2, val3):
-        self.Update()
         if self.data is None:
+            self.Update()
             return
         if (self.checkAutoMinMaxVar.get() != 1):
+            self.Update()
             return
         _dataColumn = " ".join(self.comboDataColumnVar.get().split(" ")[:-1])
         if _dataColumn not in self.data.columns:
+            self.Update()
             return
-        self.minVar.IntVar.set(min(self.data[_dataColumn]))
-        self.maxVar.IntVar.set(max(self.data[_dataColumn]))
+        _min = np.min(self.data[_dataColumn])
+        _max = np.max(self.data[_dataColumn])
+        if math.isnan(_min) or math.isnan(_max):
+            self.Update()
+            return
+        self.minVar.IntVar.set(np.min(self.data[_dataColumn]))
+        self.maxVar.IntVar.set(np.max(self.data[_dataColumn]))
+        self.Update()
 
     def _WidgetUpdate(self, val):
+        self.Update()
+
+    def _SpinboxUpdate(self):
         self.Update()
 
     def _EntryUpdate(self, val1, val2, val3):
