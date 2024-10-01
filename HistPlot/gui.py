@@ -1,6 +1,6 @@
 import os
 import tkinter as tk
-from tkinter import messagebox, filedialog, ttk
+from tkinter import messagebox, filedialog, ttk, simpledialog
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas as pd
@@ -26,6 +26,8 @@ class IntStringVar:
 
 
 class GUI():
+    _plotFigSize = (20,20)
+    _exportFigSize = (6,4)
     def __init__(self):
         self.root = None
         self.data = None
@@ -51,6 +53,12 @@ class GUI():
             self.config.set("SETTINGS", "TitleLabel", "Weighted Plot")
         if not self.config.has_option("SETTINGS", "AutoMinMax"):
             self.config.set("SETTINGS", "AutoMinMax", "1")
+        if not self.config.has_option("SETTINGS", "ExportFigSizeWidth"):
+            self.config.set("SETTINGS", "ExportFigSizeWidth", "4")
+        if not self.config.has_option("SETTINGS", "ExportFigSizeHeight"):
+            self.config.set("SETTINGS", "ExportFigSizeHeight", "3")
+
+        GUI._exportFigSize = (int(self.config.get("SETTINGS", "ExportFigSizeWidth")), int(self.config.get("SETTINGS", "ExportFigSizeHeight")))
 
         self.menubar = tk.Menu(self.root)
         self.root.config(menu=self.menubar)
@@ -62,6 +70,7 @@ class GUI():
         self.menubar.add_cascade(label="Options",menu=self.menuOptions)
         self.checkAutoMinMaxVar = tk.IntVar(value=int(self.config.get("SETTINGS", "AutoMinMax")))
         self.menuOptions.add_checkbutton(label="Auto set min and max", variable=self.checkAutoMinMaxVar)
+        self.menuOptions.add_command(label="Set standard figsize", command=self.DialogSetStandardFigsize)
 
         self.frameTools = tk.Frame(self.root)
         self.frameTools.pack(side=tk.LEFT, expand=True, fill="y")
@@ -69,8 +78,10 @@ class GUI():
         self.framePlot.pack(side=tk.LEFT, expand=True, fill="both")
 
 
-        self.figure = plt.Figure(figsize=(20,20), dpi=100)
+        self.figure = plt.Figure(figsize=GUI._plotFigSize, dpi=100)
+        self.figureExport = plt.Figure(figsize=GUI._exportFigSize, dpi=200)
         self.ax = self.figure.add_subplot() 
+        self.axExport = self.figureExport.add_subplot() 
         self.canvas = FigureCanvasTkAgg(self.figure, self.framePlot)
         self.canvtoolbar = NavigationToolbar2Tk(self.canvas,self.framePlot)
         self.canvtoolbar.update()
@@ -132,10 +143,16 @@ class GUI():
 
         self.frameExport = ttk.LabelFrame(self.frameTools, text="Export")
         self.frameExport.pack(anchor="nw", fill="x")
-        self.btnExportCSV = tk.Button(self.frameExport, text="Export Data (CSV)", command=self.ExportCSV)
+        self.frameExport1 = tk.Frame(self.frameExport)
+        self.frameExport1.pack(anchor="nw")
+        self.frameExport2 = tk.Frame(self.frameExport)
+        self.frameExport2.pack(anchor="nw")
+        self.btnExportCSV = tk.Button(self.frameExport1, text="Export Data (CSV)", command=self.ExportCSV)
         self.btnExportCSV.pack(side=tk.LEFT)
-        self.btnExportFigure = tk.Button(self.frameExport, text="Save Figure", command=self.SaveFigure)
-        self.btnExportFigure.pack(side=tk.LEFT)
+        self.btnExportFigure1 = tk.Button(self.frameExport1, text="Save figure as seen", command=self.SaveFigure)
+        self.btnExportFigure1.pack(side=tk.LEFT)
+        self.btnExportFigure2 = tk.Button(self.frameExport2, text="Save figure in standard size", command=self.SaveFigureFixed)
+        self.btnExportFigure2.pack(side=tk.LEFT)
 
         self.root.mainloop()
 
@@ -183,19 +200,25 @@ class GUI():
         self.ComboColumnChanged("", "", "")
         self.Update()
 
-    def Update(self):
-        self.ax.clear()
-        self.histData = None
+    def Update(self, updateExportFig=False):
+        if updateExportFig:
+            _ax = self.axExport
+        else:
+            _ax = self.ax
+            self.histData = None
+        _ax.clear()
 
         if self.data is None:
+            self.canvas.draw()
             return
         _dataColumn = " ".join(self.comboDataColumnVar.get().split(" ")[:-1])
         _weightColumn = " ".join(self.comboWeightColumnVar.get().split(" ")[:-1])
         if _dataColumn not in self.data.columns or (_weightColumn not in self.data.columns and _weightColumn != "None"):
+            self.canvas.draw()
             return
-        self.ax.set_title(self.txtTitleVar.get())
-        self.ax.set_ylabel(self.txtYLabelVar.get())
-        self.ax.set_xlabel(self.txtXLabelVar.get())
+        _ax.set_title(self.txtTitleVar.get())
+        _ax.set_ylabel(self.txtYLabelVar.get())
+        _ax.set_xlabel(self.txtXLabelVar.get())
         range = (self.minVar.IntVar.get(), self.maxVar.IntVar.get())
         if range[0] > range[1]:
             range = (self.maxVar.IntVar.get(), self.minVar.IntVar.get())
@@ -206,9 +229,13 @@ class GUI():
         if _weightColumn != "None":
             _weights = self.data[_weightColumn].fillna(0) # If NaN weight column, set it to weight 0
 
-        self.histData = self.ax.hist(_data, weights=_weights, bins=self.binsVar.IntVar.get(), range=range)
-        if self.framePlot.winfo_width() > 100:
-            self.figure.tight_layout()
+        _histData = _ax.hist(_data, weights=_weights, bins=self.binsVar.IntVar.get(), range=range)
+        if not updateExportFig:
+            self.histData = _histData
+            if self.framePlot.winfo_width() > 100:
+                self.figure.tight_layout()
+        else:
+            self.figureExport.tight_layout()
         self.canvas.draw()
 
     def ExportCSV(self):
@@ -228,7 +255,7 @@ class GUI():
             save_file.write("%s,%s,%s\n" % (round(self.histData[1][i],3),round(self.histData[1][i+1],3), self.histData[0][i]))
         save_file.close()
 
-    def SaveFigure(self):
+    def SaveFigure(self, fixedSize=False):
         if self.histData is None:
             self.root.bell()
             return
@@ -237,7 +264,25 @@ class GUI():
             return
         _fname = save_file.name
         save_file.close()
-        self.figure.savefig(_fname)
+        if fixedSize:
+            self.Update(updateExportFig=True)
+            self.figureExport.savefig(_fname, dpi=200)
+        else:
+            self.figure.savefig(_fname)
+
+    def SaveFigureFixed(self):
+        self.SaveFigure(fixedSize=True)
+
+    def DialogSetStandardFigsize(self):
+        _width = simpledialog.askinteger("HistPlot", "Width in inches (recommended: 6)", minvalue=1, maxvalue=20, initialvalue=self.config.get("SETTINGS", "ExportFigSizeWidth"))
+        _height = simpledialog.askinteger("HistPlot", "Height in inches (recommended: 4)", minvalue=1, maxvalue=20, initialvalue=self.config.get("SETTINGS", "ExportFigSizeHeight"))
+        if _width is None or _height is None:
+            return
+        GUI._exportFigSize = (_width, _height)
+        self.figureExport.set_size_inches(GUI._exportFigSize)
+        self.config.set("SETTINGS", "ExportFigSizeWidth", str(_width))
+        self.config.set("SETTINGS", "ExportFigSizeHeight", str(_height))
+        messagebox.showinfo("HistoPlot", f"Default plot size set to {_width}x{_height}")
 
     def ComboColumnChanged(self, val1, val2, val3):
         if self.data is None:
