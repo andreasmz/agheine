@@ -1,13 +1,3 @@
-# AG Heine GitHub Repository
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/andreasmz/agheine/main)
+# AG Heine
 
-This repository contains various scripts for BioInformatics for use in the AG Heine. To get started, I recommend using mybinder.org:
-```
-  https://mybinder.org/v2/gh/andreasmz/agheine/main
-```
-
-A documentation is available in the wiki section
-```
-  https://github.com/andreasmz/agheine/wiki
-```
- 
+This repository contains scripts, notebooks etc. for internal use at the AG Heine of University Mainz.
