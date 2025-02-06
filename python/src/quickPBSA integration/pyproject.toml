@@ -1,0 +1,29 @@
+[project]
+name = "quickPBSA_agheine"
+version = "1.0.0"
+authors = [
+  { name="Andreas Brilka"},
+]
+
+description = "Integration of quickPBSA for the AG Heine"
+requires-python = ">=3.11"
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+keywords = ["agheine"]
+
+dependencies = [
+  "quickpbsa>=2021.0.1",
+  "pandas>=2.1.0",
+  "numpy>=2.1.0",
+  "matplotlib>=3.9.2",
+  "ipykernel>=6.1.0"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
